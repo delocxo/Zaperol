@@ -1,4 +1,6 @@
-﻿var compiler = new Compiler(new InvalidSymbol(), [], [], []);
+﻿Globals.Init();
+
+var compiler = new Compiler(new InvalidSymbol(), [], [], []);
 
 compiler.CompileFile("D:/2020s Archive/2026/October/Code/Zaperol/main.zap", null);
 compiler.RequireReturn(null);

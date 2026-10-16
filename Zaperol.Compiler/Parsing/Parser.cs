@@ -396,7 +396,7 @@ class Parser
             return new BoolExpr(false, token.Position);
         else if (Match(TokenType.Identifier))
         {
-            if (Check(TokenType.Less))
+            if (Match(TokenType.DoubleColon))
                 return ParseGenericName(token.Lexeme, token.Position);
             return new NameExpr(token.Lexeme, token.Position);
         }

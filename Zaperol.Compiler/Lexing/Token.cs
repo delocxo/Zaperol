@@ -14,7 +14,7 @@
 
     Equal, Semicolon, LeftBracket, RightBracket,
     LeftBrace, RightBrace, LeftParen, RightParen,
-    Comma, Period, Hash, Arrow, At,
+    Comma, Period, Hash, Arrow, At, DoubleColon,
 
     Eof,
 }

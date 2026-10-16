@@ -49,6 +49,12 @@ readonly struct Value
         Object = chunk;
     }
 
+    public Value(Native native)
+    {
+        Kind = ValueKind.Function;
+        Object = native;
+    }
+
     public Value(object? @object)
     {
         Kind = ValueKind.Object;
@@ -63,6 +69,7 @@ readonly struct Value
     public string String => (string)Object!;
     public Value[] Array => (Value[])Object!;
     public Chunk Function => (Chunk)Object!;
+    public Native Native => (Native)Object!;
 
     public override string ToString()
     {
@@ -93,4 +100,6 @@ readonly struct Value
         string joined = string.Join(", ", array);
         return $"[{joined}]";
     }
+
+    public int AsInt32() => (int)Int;
 }

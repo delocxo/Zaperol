@@ -398,6 +398,13 @@ static class Vm
                             args[i] = stack.Pop();
 
                         Value target = stack.Pop();
+
+                        if (target.Object is Native native)
+                        {
+                            stack.Push(native.NativeDelegate(native.TypeSymbols, args));
+                            break;
+                        }
+
                         var function = target.Function;
                         var callFrame = new CallFrame(function);
 

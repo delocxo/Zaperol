@@ -349,12 +349,19 @@ class Compiler
                         Chunk.AddInstruction(constant, OpCode.LoadConst, nameExpr.Position);
                         return compiled.Symbol;
                     }
-                    Local local = LocalResolver.Resolve(
-                        nameExpr.Name,
-                        nameExpr.Position
-                    );
-                    Chunk.AddInstruction(local.Slot, OpCode.LoadLocal, nameExpr.Position);
-                    return local.TypeSymbol;
+                    else if (LocalResolver.TryResolve(nameExpr.Name, out var local))
+                    {
+                        Chunk.AddInstruction(local!.Slot, OpCode.LoadLocal, nameExpr.Position);
+                        return local.TypeSymbol;
+                    }
+                    else if (Globals.Values.TryGetValue(nameExpr.Name, out var value) && value.Object is Native native)
+                    {
+                        var bound = BindNative(native, [], nameExpr.Position);
+                        Chunk.AddLoadConst(bound.ToValue(), nameExpr.Position);
+                        return bound.FunctionSymbol;
+                    }
+
+                    throw new Error($"'{nameExpr.Name}' does not exist in this scope", nameExpr.Position);
                 }
 
             case UnaryExpr unaryExpr:
@@ -398,15 +405,22 @@ class Compiler
 
             case BoundGenericNameExpr boundNameExpr:
                 {
-                    if (_functions.TryGetValue(boundNameExpr.Name, out var function))
-                    {
-                        var typeArguments = boundNameExpr.Generics
+                    var typeArguments = boundNameExpr.Generics
                             .Select(ResolveType)
                             .ToList();
+
+                    if (_functions.TryGetValue(boundNameExpr.Name, out var function))
+                    {
                         var compiled = CompileFunction(function, typeArguments, boundNameExpr.Position);
                         int constant = Chunk.AddConst(new Value(compiled.Chunk));
                         Chunk.AddInstruction(constant, OpCode.LoadConst, boundNameExpr.Position);
                         return compiled.Symbol;
+                    }
+                    else if (Globals.Values.TryGetValue(boundNameExpr.Name, out var value) && value.Object is Native native)
+                    {
+                        var bound = BindNative(native, typeArguments.ToArray(), boundNameExpr.Position);
+                        Chunk.AddLoadConst(bound.ToValue(), boundNameExpr.Position);
+                        return bound.FunctionSymbol;
                     }
 
                     throw new Error($"'{boundNameExpr.Name}' does not exist in this scope", boundNameExpr.Position);
@@ -785,23 +799,44 @@ class Compiler
         return new ArraySymbol(arrayType);
     }
 
-    public TypeSymbol ResolveType(TypeSymbol type)
+    public TypeSymbol ResolveType(TypeSymbol type, Dictionary<string, TypeSymbol> bindings)
     {
         return type switch
         {
             TypeParameterSymbol parameter =>
-                _genericArguments[parameter.Name],
+                bindings[parameter.Name],
 
             ArraySymbol array =>
-                new ArraySymbol(ResolveType(array.ElementType)),
+                new ArraySymbol(ResolveType(array.ElementType, bindings)),
 
             FunctionSymbol function =>
                 new FunctionSymbol(
-                    function.ParameterSymbols.Select(ResolveType).ToList(),
-                    ResolveType(function.ReturnType)
+                    function.ParameterSymbols.Select(p => ResolveType(p, bindings)).ToList(),
+                    ResolveType(function.ReturnType, bindings)
                 ),
 
             _ => type
         };
+    }
+
+    public TypeSymbol ResolveType(TypeSymbol type)
+    {
+        return ResolveType(type, _genericArguments);
+    }
+
+    Native BindNative(Native native, TypeSymbol[] typeArguments, Position position)
+    {
+        if (typeArguments.Length != native.GenericParameters.Length)
+            throw new Error(
+                $"Expected {native.GenericParameters.Length} type arguments, got {typeArguments.Length}",
+                position
+            );
+
+        var bindings = native.GenericParameters
+            .Zip(typeArguments)
+            .ToDictionary(key => key.First, value => value.Second);
+
+        var functionSymbol = (FunctionSymbol)ResolveType(native.FunctionSymbol, bindings);
+        return native.Bound(functionSymbol, typeArguments);
     }
 }
