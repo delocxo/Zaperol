@@ -177,17 +177,29 @@ class Semantics
         AddGenerics(generics, unBoundClassStmt.Position);
 
         List<BoundVarStmt> fields = [];
-        HashSet<string> fieldsHashSet = [];
+        List<BoundFunctionStmt> methods = [];
+        HashSet<string> members = [];
 
         foreach (Stmt stmt in unBoundClassStmt.Body)
         {
-            if (stmt is not UnboundVarStmt var)
-                throw new Error($"Only var statements are allowed inside classes", stmt.Position);
+            if (stmt is UnboundVarStmt var)
+            {
+                if (!members.Add(var.Name))
+                    throw new Error($"'{var.Name}' is a duplicate member", var.Position);
 
-            if (!fieldsHashSet.Add(var.Name))
-                throw new Error($"'{var.Name}' is a duplicate field", var.Position);
+                fields.Add((BoundVarStmt)CheckStmt(var));
+                continue;
+            }
+            else if (stmt is UnBoundFunctionStmt function)
+            {
+                if (!members.Add(function.Name))
+                    throw new Error($"'{function.Name}' is a duplicate member", function.Position);
 
-            fields.Add((BoundVarStmt)CheckStmt(var));
+                methods.Add(CheckFunction(function));
+                continue;
+            }
+
+            throw new Error($"Only var statements are allowed inside classes", stmt.Position);
         }
 
         _genericsStack.Pop();
@@ -196,6 +208,7 @@ class Semantics
             unBoundClassStmt.Name,
             unBoundClassStmt.Generics,
             fields,
+            methods,
             unBoundClassStmt.Position
         );
     }
@@ -271,7 +284,7 @@ class Semantics
             case MemberExpr memberExpr:
                 return new MemberExpr(
                     CheckExpr(memberExpr.Target),
-                    memberExpr.MemberName,
+                    CheckExpr(memberExpr.Member),
                     memberExpr.Position
                 );
 
@@ -298,11 +311,8 @@ class Semantics
         {
             case PrimitiveParserSymbol primitive:
                 {
-                    if (_genericsStack.TryPeek(out var parameterTypes))
-                    {
-                        if (parameterTypes.Contains(primitive.TypeName))
-                            return new TypeParameterSymbol(primitive.TypeName);
-                    }
+                    if (TryGetTypeParameter(primitive.TypeName, out var typeParameter))
+                        return typeParameter!;
 
                     if (TypeRegistery.TryGetValue(primitive.TypeName, out var callback))
                         return callback();
@@ -408,5 +418,17 @@ class Semantics
                     throw new Error($"'{generic}' is a duplicate generic parameter", position);
         }
         _genericsStack.Push(generics);
+    }
+
+    bool TryGetTypeParameter(string typeName, out TypeParameterSymbol? typeParameter)
+    {
+        foreach (var parameterTypes in _genericsStack)
+            if (parameterTypes.Contains(typeName))
+            {
+                typeParameter = new TypeParameterSymbol(typeName);
+                return true;
+            }
+        typeParameter = null;
+        return false;
     }
 }

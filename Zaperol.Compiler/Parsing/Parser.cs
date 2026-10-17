@@ -503,9 +503,15 @@ class Parser
 
                 Next();
 
+                Position namePos = Current().Position;
                 string name = ParseName();
 
-                left = new MemberExpr(left, name, position);
+                Expr member = new NameExpr(name, namePos);
+
+                if (Match(TokenType.DoubleColon))
+                    member = ParseGenericName(name, namePos);
+
+                left = new MemberExpr(left, member, position);
 
                 continue;
             }

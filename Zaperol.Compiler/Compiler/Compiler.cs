@@ -29,51 +29,51 @@ class Compiler
 
     public void CompileFile(string path, Position? position)
     {
-        try
+        // try
+        // {
+        if (!File.Exists(path))
+            throw new Error($"File '{path}' does not exist", position);
+
+        path = Path.GetFullPath(path);
+
+        if (_compiledFiles.TryGetValue(path, out bool finished))
         {
-            if (!File.Exists(path))
-                throw new Error($"File '{path}' does not exist", position);
-
-            path = Path.GetFullPath(path);
-
-            if (_compiledFiles.TryGetValue(path, out bool finished))
-            {
-                if (!finished)
-                    throw new Error($"Circular import detected: '{path}'", position);
-                return;
-            }
-
-            _compiledFiles[path] = false;
-
-            string source = File.ReadAllText(path);
-            Lexer lexer = new(source, path);
-            var tokens = lexer.Lex();
-            Parser parser = new(tokens);
-            var ast = parser.Parse();
-            Semantics semantics = new();
-            var newAst = semantics.Check(ast);
-
-            foreach (Stmt stmt in newAst)
-            {
-                if (stmt is BoundFunctionStmt function)
-                    _functions[function.Name] = function;
-
-                else if (stmt is BoundClassStmt boundClassStmt)
-                    _classes[boundClassStmt.Name] = boundClassStmt;
-            }
-
-            CompileStmts(newAst);
-
-            _compiledFiles[path] = true;
+            if (!finished)
+                throw new Error($"Circular import detected: '{path}'", position);
+            return;
         }
-        catch (Error e)
+
+        _compiledFiles[path] = false;
+
+        string source = File.ReadAllText(path);
+        Lexer lexer = new(source, path);
+        var tokens = lexer.Lex();
+        Parser parser = new(tokens);
+        var ast = parser.Parse();
+        Semantics semantics = new();
+        var newAst = semantics.Check(ast);
+
+        foreach (Stmt stmt in newAst)
         {
-            e.Exit();
+            if (stmt is BoundFunctionStmt function)
+                _functions[function.Name] = function;
+
+            else if (stmt is BoundClassStmt boundClassStmt)
+                _classes[boundClassStmt.Name] = boundClassStmt;
         }
-        catch (Exception e)
-        {
-            new Error(e.Message, null).Exit();
-        }
+
+        CompileStmts(newAst);
+
+        _compiledFiles[path] = true;
+        // }
+        // catch (Error e)
+        // {
+        //     e.Exit();
+        // }
+        // catch (Exception e)
+        // {
+        //     new Error(e.Message, null).Exit();
+        // }
     }
 
     public void CompileStmts(List<Stmt> stmts)
@@ -264,7 +264,8 @@ class Compiler
     (FunctionSymbol Symbol, Chunk Chunk) CompileFunction(
         BoundFunctionStmt function,
         List<TypeSymbol> typeArguments,
-        Position position)
+        Position position,
+        ClassSymbol? owner = null)
     {
         if (typeArguments.Count != function.Generics.Count)
             throw new Error(
@@ -276,12 +277,24 @@ class Compiler
             typeArguments.Select(x => x
         ))}>";
 
+        if (owner != null)
+            key = $"{owner}.{key}";
+
+
         if (_compiledFunctions.TryGetValue(key, out var compiled))
             return compiled;
 
-        Dictionary<string, TypeSymbol> genericArguments = function.Generics
-            .Zip(typeArguments)
-            .ToDictionary(key => key.First, value => value.Second);
+        Dictionary<string, TypeSymbol> genericArguments = [];
+
+        if (owner != null)
+        {
+            var def = _classes[owner.ClassName];
+            foreach (var pair in def.Generics.Zip(owner.TypeArguments))
+                genericArguments.Add(pair.First, pair.Second);
+        }
+
+        foreach (var pair in function.Generics.Zip(typeArguments))
+            genericArguments.Add(pair.First, pair.Second);
 
         Compiler compiler = new Compiler(
             function.ReturnType,
@@ -305,6 +318,23 @@ class Compiler
                 function.Position
             );
             resolvedParameterTypes.Add(parameterType);
+        }
+
+        if (owner != null)
+        {
+            if (function.Paramaters.Count == 0)
+                throw new Error(
+                    "Methods must declare 'this' as their first parameter",
+                    function.Position
+                );
+
+            if (function.Paramaters[0].Name != "this")
+                throw new Error(
+                    "The first method parameter must be named 'this'",
+                    function.Position
+                );
+
+            resolvedParameterTypes[0].Expect(owner, function.Position);
         }
 
         var functionSymbol = new FunctionSymbol(resolvedParameterTypes, compiler.ReturnType);
@@ -499,6 +529,78 @@ class Compiler
 
             case CallExpr callExpr:
                 {
+                    if (callExpr.Target is MemberExpr memberExpr)
+                    {
+                        var memberTarget = CompileExpr(memberExpr.Target);
+                        if (memberTarget is ClassSymbol classSymbol)
+                        {
+                            int receiverLocal = Chunk.GetCompilerLocal();
+                            Chunk.AddInstruction(receiverLocal, OpCode.StoreLocal, memberExpr.Position);
+
+                            string methodName = "";
+                            List<TypeSymbol> typeArguments = [];
+
+                            if (memberExpr.Member is NameExpr nameExpr)
+                            {
+                                methodName = nameExpr.Name;
+                                typeArguments = [];
+                            }
+                            else
+                            {
+                                var genericNameExpr = (BoundGenericNameExpr)memberExpr.Member;
+                                methodName = genericNameExpr.Name;
+                                typeArguments = genericNameExpr.Generics
+                                    .Select(ResolveType)
+                                    .ToList();
+                            }
+
+                            var def = _classes[classSymbol.ClassName];
+                            int index = def.Methods.FindIndex(x => x.Name == methodName);
+
+                            if (index == -1)
+                                throw new Error(
+                                    $"Class '{classSymbol.ClassName}' does not contain method '{methodName}'",
+                                    memberExpr.Position
+                                );
+
+                            var method = def.Methods[index];
+
+                            var compiled = CompileFunction(
+                                method,
+                                typeArguments,
+                                memberExpr.Position,
+                                classSymbol
+                            );
+
+                            Chunk.AddLoadConst(new(compiled.Chunk), memberExpr.Position);
+
+                            Chunk.AddInstruction(receiverLocal, OpCode.LoadLocal, memberExpr.Position);
+
+                            int expectedCount = compiled.Symbol.ParameterSymbols.Count - 1;
+
+                            if (callExpr.Arguments.Count != expectedCount)
+                                throw new Error(
+                                    $"Method expects {expectedCount} argument(s), got {callExpr.Arguments.Count}",
+                                    callExpr.Position
+                                );
+
+                            var methodArgs = callExpr.Arguments
+                                .Select(CompileExpr)
+                                .ToList();
+
+                            for (int i = 0; i < methodArgs.Count; i++)
+                            {
+                                methodArgs[i].Expect(
+                                    compiled.Symbol.ParameterSymbols[i + 1],
+                                    callExpr.Arguments[i].Position
+                                );
+                            }
+
+                            Chunk.AddInstruction(methodArgs.Count + 1, OpCode.Call, callExpr.Position);
+
+                            return compiled.Symbol.ReturnType;
+                        }
+                    }
                     var target = CompileExpr(callExpr.Target);
                     var arguments = callExpr.Arguments
                         .Select(CompileExpr)
@@ -567,12 +669,15 @@ class Compiler
 
                     if (target is ClassSymbol classSymbol)
                     {
+                        if (memberExpr.Member is not NameExpr nameExpr)
+                            throw new Error("Expected a valid member name", memberExpr.Position);
+
                         var @class = _classes[classSymbol.Name];
-                        int index = @class.Fields.FindIndex(x => x.Name == memberExpr.MemberName);
+                        int index = @class.Fields.FindIndex(x => x.Name == nameExpr.Name);
 
                         if (index == -1)
                             throw new Error(
-                                $"Class '{classSymbol.ClassName}' does not contain field '{memberExpr.MemberName}'",
+                                $"Class '{classSymbol.ClassName}' does not contain field '{nameExpr.Name}'",
                                 memberExpr.Position
                             );
 
@@ -597,12 +702,15 @@ class Compiler
 
                     if (target is ClassSymbol classSymbol)
                     {
+                        if (memberExpr.Member is not NameExpr nameExpr)
+                            throw new Error("Expected a valid member name", memberExpr.Position);
+
                         var @class = _classes[classSymbol.Name];
-                        int index = @class.Fields.FindIndex(x => x.Name == memberExpr.MemberName);
+                        int index = @class.Fields.FindIndex(x => x.Name == nameExpr.Name);
 
                         if (index == -1)
                             throw new Error(
-                                $"Class '{classSymbol.ClassName}' does not contain field '{memberExpr.MemberName}'",
+                                $"Class '{classSymbol.ClassName}' does not contain field '{nameExpr.Name}'",
                                 memberExpr.Position
                             );
 

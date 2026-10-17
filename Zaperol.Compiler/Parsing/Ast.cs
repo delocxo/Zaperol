@@ -18,7 +18,7 @@ record BoundGenericNameExpr(string Name, List<TypeSymbol> Generics, Position Pos
 record CallExpr(Expr Target, List<Expr> Arguments, Position Position) : Expr(Position);
 record IndexExpr(Expr Target, Expr Index, Position Position) : Expr(Position);
 record IndexSetExpr(IndexExpr IndexExpr, Expr Value) : Expr(IndexExpr.Position);
-record MemberExpr(Expr Target, string MemberName, Position Position) : Expr(Position);
+record MemberExpr(Expr Target, Expr Member, Position Position) : Expr(Position);
 record MemberSetExpr(MemberExpr MemberExpr, Expr Value) : Expr(MemberExpr.Position);
 record UnboundDefaultExpr(ParserSymbol Type, Position Position) : Expr(Position);
 record BoundDefaultExpr(TypeSymbol Type, Position Position) : Expr(Position);
@@ -244,14 +244,17 @@ class BoundClassStmt : Stmt
         string name,
         List<string> generics,
         List<BoundVarStmt> fields,
+        List<BoundFunctionStmt> methods,
         Position position) : base(position)
     {
         Name = name;
         Generics = generics;
         Fields = fields;
+        Methods = methods;
     }
 
     public string Name { get; }
     public List<string> Generics { get; }
     public List<BoundVarStmt> Fields { get; }
+    public List<BoundFunctionStmt> Methods { get; }
 }
