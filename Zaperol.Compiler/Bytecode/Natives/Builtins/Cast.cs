@@ -79,84 +79,89 @@ class CastBuiltins : IBuiltin
         ).ToValue();
 
         globals["tryCast"] = new Native(
-            new(
-                [new TypeParameterSymbol("TSource")],
-                Result.ResultSymbolWithTParameter("TTarget")
-            ),
-            ["TSource", "TTarget"],
-            (typeArgs, args) =>
+        new(
+            [new TypeParameterSymbol("TSource")],
+            Result.ResultSymbolWithTParameter("TTarget")
+        ),
+        ["TSource", "TTarget"],
+        (typeArgs, args) =>
+        {
+            Value source = args[0];
+            var sourceSymbol = typeArgs[0];
+            var targetSymbol = typeArgs[1];
+
+            switch (targetSymbol)
             {
-                Value source = args[0];
-                var sourceSymbol = typeArgs[0];
-                var targetSymbol = typeArgs[1];
+                case StringSymbol:
+                    return Result.MakeResult(new Value(source.ToString()), true);
 
-                switch (targetSymbol)
-                {
-                    case StringSymbol:
-                        return new(args[0].ToString());
+                case IntSymbol:
+                    switch (sourceSymbol)
+                    {
+                        case IntSymbol:
+                            return Result.MakeResult(source, true);
 
-                    case IntSymbol:
-                        switch (sourceSymbol)
-                        {
-                            case IntSymbol intSymbol:
-                                return source;
+                        case FloatSymbol:
+                            return Result.MakeResult(new Value((long)source.Float), true);
 
-                            case FloatSymbol floatSymbol:
-                                return new((long)source.Float);
+                        case BoolSymbol:
+                            return Result.MakeResult(new Value(source.Bool ? 1L : 0L), true);
 
-                            case BoolSymbol boolSymbol:
-                                return new(source.Bool ? 1 : 0);
+                        case StringSymbol:
+                            if (long.TryParse(source.String, CultureInfo.InvariantCulture, out long result))
+                            {
+                                return Result.MakeResult(new Value(result), true);
+                            }
+                            break;
+                    }
+                    break;
 
-                            case StringSymbol stringSymbol:
-                                if (long.TryParse(source.String, CultureInfo.InvariantCulture, out long result))
-                                    return Result.MakeResult(new(result), true);
-                                break;
+                case FloatSymbol:
+                    switch (sourceSymbol)
+                    {
+                        case IntSymbol:
+                            return Result.MakeResult(new Value((double)source.Int), true);
 
-                        }
-                        break;
+                        case FloatSymbol:
+                            return Result.MakeResult(source, true);
 
-                    case FloatSymbol:
-                        switch (sourceSymbol)
-                        {
-                            case IntSymbol intSymbol:
-                                return new((double)source.Int);
+                        case BoolSymbol:
+                            return Result.MakeResult(new Value(source.Bool ? 1D : 0D), true);
 
-                            case FloatSymbol floatSymbol:
-                                return source;
+                        case StringSymbol:
+                            if (double.TryParse(source.String, CultureInfo.InvariantCulture, out double result))
+                            {
+                                return Result.MakeResult(new Value(result), true);
+                            }
+                            break;
+                    }
+                    break;
 
-                            case BoolSymbol boolSymbol:
-                                return new(source.Bool ? 1D : 0);
+                case BoolSymbol:
+                    switch (sourceSymbol)
+                    {
+                        case IntSymbol:
+                            return Result.MakeResult(new Value(source.Int != 0), true);
 
-                            case StringSymbol stringSymbol:
-                                if (double.TryParse(source.String, CultureInfo.InvariantCulture, out double result))
-                                    return Result.MakeResult(new(result), true);
-                                break;
-                        }
-                        break;
+                        case FloatSymbol:
+                            return Result.MakeResult(new Value(source.Float != 0.0), true);
 
-                    case BoolSymbol:
-                        switch (sourceSymbol)
-                        {
-                            case IntSymbol:
-                                return new(source.Int != 0);
+                        case BoolSymbol:
+                            return Result.MakeResult(source, true);
 
-                            case FloatSymbol:
-                                return new(source.Float != 0.0);
+                        case StringSymbol:
+                            if (bool.TryParse(source.String, out bool result))
+                            {
+                                return Result.MakeResult(new Value(result), true);
+                            }
+                            break;
+                    }
+                    break;
+            }
 
-                            case BoolSymbol:
-                                return source;
-
-                            case StringSymbol stringSymbol:
-                                if (bool.TryParse(source.String, out bool result))
-                                    return Result.MakeResult(new(result), true);
-                                break;
-                        }
-                        break;
-                }
-
-                return Result.MakeResult(new Value(0), false);
-            },
-            []
-        ).ToValue();
+            return Result.MakeResult(Value.DefaultValue(targetSymbol), false);
+        },
+        []
+    ).ToValue();
     }
 }
