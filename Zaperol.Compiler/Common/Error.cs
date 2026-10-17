@@ -14,6 +14,8 @@ struct Position
     public int Line { get; set; }
     public int Column { get; set; }
     public string Source { get; }
+
+    public static Position Protocal => new Position(0, 0, "<protocal>");
 }
 
 class Error : Exception

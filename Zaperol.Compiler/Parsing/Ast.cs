@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 
 abstract record Expr(Position Position);
+record EmptyExpr() : Expr(Position.Protocal);
 record IntExpr(long Value, Position Position) : Expr(Position);
 record FloatExpr(double Value, Position Position) : Expr(Position);
 record StringExpr(string Value, Position Position) : Expr(Position);

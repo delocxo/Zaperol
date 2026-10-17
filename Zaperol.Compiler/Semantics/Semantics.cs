@@ -9,10 +9,10 @@ class Semantics
         ["string"] = () => new StringSymbol(),
         ["bool"] = () => new BoolSymbol()
     };
+    public static Dictionary<string, UnBoundClassStmt> Classes = [];
 
-    static Stack<HashSet<string>> _genericsStack = [];
-    HashSet<string> _names = [];
-    Dictionary<string, UnBoundClassStmt> _classes = new();
+    static HashSet<string> _names = [];
+    Stack<HashSet<string>> _genericsStack = [];
 
     int _loopDepth = 0;
     int _ifDepth = 0;
@@ -27,7 +27,7 @@ class Semantics
             if (stmt is UnBoundClassStmt unBoundClassStmt)
             {
                 AddName(unBoundClassStmt.Name, "class", unBoundClassStmt.Position);
-                _classes[unBoundClassStmt.Name] = unBoundClassStmt;
+                Classes[unBoundClassStmt.Name] = unBoundClassStmt;
             }
         foreach (Stmt stmt in stmts)
         {
@@ -317,7 +317,7 @@ class Semantics
                     if (TypeRegistery.TryGetValue(primitive.TypeName, out var callback))
                         return callback();
 
-                    if (_classes.TryGetValue(primitive.TypeName, out var classStmt))
+                    if (Classes.TryGetValue(primitive.TypeName, out var classStmt))
                     {
                         if (classStmt.Generics.Count != 0)
                             throw new Error($"Class '{primitive.TypeName}' requires {classStmt.Generics.Count} type arguments", primitive.Position);
@@ -346,7 +346,7 @@ class Semantics
 
             case GenericParserSymbol generic:
                 {
-                    if (!_classes.TryGetValue(generic.TypeName, out var classStmt))
+                    if (!Classes.TryGetValue(generic.TypeName, out var classStmt))
                         throw new Error(
                            $"'{generic.TypeName}' is not a valid class type",
                            generic.Position
@@ -402,7 +402,7 @@ class Semantics
         }
     }
 
-    void AddName(string name, string type, Position position)
+    public static void AddName(string name, string type, Position? position)
     {
         if (!_names.Add(name))
             throw new Error($"'{name}' is already an existing {type}", position);

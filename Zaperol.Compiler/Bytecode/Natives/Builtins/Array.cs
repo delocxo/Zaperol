@@ -106,5 +106,30 @@ class ArrayBuiltins : IBuiltin
             },
             []
         ).ToValue();
+
+        globals["arrayResize"] = new Native(
+            new(
+                [new ArraySymbol(new TypeParameterSymbol("T")), new IntSymbol()],
+                new ArraySymbol(new TypeParameterSymbol("T"))
+            ),
+            ["T"],
+            (typeArgs, args) =>
+            {
+                Value[] array = args[0].Array;
+                int oldLength = array.Length;
+                int newLength = args[1].AsInt32();
+                Array.Resize(ref array, newLength);
+                if (newLength > oldLength)
+                    Array.Fill(
+                        array,
+                        Value.DefaultValue(typeArgs[0]),
+                        oldLength,
+                        newLength - oldLength
+                    );
+
+                return new Value(array);
+            },
+            []
+        ).ToValue();
     }
 }
