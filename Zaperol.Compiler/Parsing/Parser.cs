@@ -52,6 +52,9 @@ class Parser
         else if (Check(TokenType.Func))
             return ParseFunction();
 
+        else if (Check(TokenType.Class))
+            return ParseClass();
+
         return ParseExprStmt();
     }
 
@@ -187,6 +190,22 @@ class Parser
         return new(name, body, paramaters, generics, returnType, position);
     }
 
+    UnBoundClassStmt ParseClass()
+    {
+        Position position = GetPosNext();
+
+        string name = ParseName("Expected class name");
+
+        List<string> generics = [];
+
+        if (Check(TokenType.Less))
+            generics = ParseNames(TokenType.Less, TokenType.Greater);
+
+        var body = ParseBody();
+
+        return new(name, generics, body, position);
+    }
+
     Error ThrowUnexpected()
     {
         Token token = Current();
@@ -227,6 +246,18 @@ class Parser
         }
 
         string typeName = ParseName("Expected type name");
+
+        if (Match(TokenType.Less))
+        {
+            List<ParserSymbol> types = [ParseType()];
+
+            while (Match(TokenType.Comma))
+                types.Add(ParseType());
+
+            Expect(TokenType.Greater);
+
+            return new GenericParserSymbol(typeName, types, position);
+        }
 
         return new PrimitiveParserSymbol(typeName, position);
     }
@@ -421,6 +452,16 @@ class Parser
 
             return new TypeofExpr(expr, token.Position);
         }
+        else if (Match(TokenType.Default))
+        {
+            Expect(TokenType.LeftParen);
+
+            var symbol = ParseType();
+
+            Expect(TokenType.RightParen);
+
+            return new UnboundDefaultExpr(symbol, token.Position);
+        }
 
         throw ThrowUnexpected();
     }
@@ -441,33 +482,33 @@ class Parser
                 continue;
             }
 
-            //     if (Check(TokenType.LeftBracket))
-            //     {
-            //         Position position = Current().Position;
+            if (Check(TokenType.LeftBracket))
+            {
+                Position position = Current().Position;
 
-            //         Expect(TokenType.LeftBracket);
+                Expect(TokenType.LeftBracket);
 
-            //         Expr index = ParseExpr();
+                Expr index = ParseExpr();
 
-            //         Expect(TokenType.RightBracket);
+                Expect(TokenType.RightBracket);
 
-            //         left = new IndexExpr(left, index, position);
+                left = new IndexExpr(left, index, position);
 
-            //         continue;
-            //     }
+                continue;
+            }
 
-            //     if (Check(TokenType.Period))
-            //     {
-            //         Position position = Current().Position;
+            if (Check(TokenType.Period))
+            {
+                Position position = Current().Position;
 
-            //         Next();
+                Next();
 
-            //         string name = ParseName();
+                string name = ParseName();
 
-            //         left = new MemberExpr(left, name, position);
+                left = new MemberExpr(left, name, position);
 
-            //         continue;
-            //     }
+                continue;
+            }
 
             break;
         }
@@ -679,6 +720,12 @@ class Parser
 
             if (left is NameExpr nameExpr)
                 return new AssignExpr(nameExpr.Name, expr, left.Position);
+
+            else if (left is IndexExpr indexExpr)
+                return new IndexSetExpr(indexExpr, expr);
+
+            else if (left is MemberExpr memberExpr)
+                return new MemberSetExpr(memberExpr, expr);
 
             throw new Error("Invalid assign target", left.Position);
         }

@@ -61,6 +61,12 @@ readonly struct Value
         Object = @object;
     }
 
+    public Value(object? @object, ValueKind kind)
+    {
+        Kind = ValueKind.Object;
+        Object = @object;
+    }
+
     public ValueKind Kind { get; }
     public long Int { get; }
     public double Float { get; }
@@ -81,7 +87,7 @@ readonly struct Value
             ValueKind.Bool => Bool ? "true" : "false",
             ValueKind.Array => ArrayToString(),
             ValueKind.Function => "<function()>",
-            ValueKind.Object => Object!.ToString() ?? "<object>",
+            ValueKind.Object => ObjectToString(),
             _ => "<unknown>"
         };
     }
@@ -101,5 +107,40 @@ readonly struct Value
         return $"[{joined}]";
     }
 
+    string ClassToString()
+    {
+        var array = Array
+            .Select(x => x.ToStringQuotes());
+        string joined = string.Join(", ", array);
+        return $"<class({joined})>";
+    }
+
+    string ObjectToString()
+    {
+        if (Object == null)
+            return "<null>";
+        return Object.ToString() ?? "<object>";
+    }
+
     public int AsInt32() => (int)Int;
+
+    public static Value DefaultValue(TypeSymbol typeSymbol)
+    {
+        return typeSymbol switch
+        {
+            IntSymbol => new Value(0L),
+            FloatSymbol => new Value(0.0),
+            BoolSymbol => new Value(false),
+
+            StringSymbol or
+            ArraySymbol or
+            FunctionSymbol or
+            ClassSymbol =>
+                new Value((object?)null),
+
+            _ => throw new InvalidOperationException(
+                $"Cannot create a default value for {typeSymbol}"
+            )
+        };
+    }
 }

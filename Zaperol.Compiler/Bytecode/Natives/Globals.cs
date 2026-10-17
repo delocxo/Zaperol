@@ -4,7 +4,8 @@ static class Globals
 
     static List<IBuiltin> _toBeLoaded = [
         new ArrayBuiltins(),
-        new IoBuiltins()
+        new IoBuiltins(),
+        new CastBuiltins()
     ];
 
     public static void Init()

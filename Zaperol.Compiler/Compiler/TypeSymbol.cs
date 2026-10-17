@@ -12,6 +12,14 @@ abstract record TypeSymbol(string Name)
         }
         else if (left is ArraySymbol leftArray && right is ArraySymbol rightArray)
             return TypeCheck(leftArray.ElementType, rightArray.ElementType);
+        else if (left is ClassSymbol ca && right is ClassSymbol cb)
+        {
+            return ca.ClassName == cb.ClassName &&
+                ca.TypeArguments.Count == cb.TypeArguments.Count &&
+                ca.TypeArguments
+                    .Zip(cb.TypeArguments)
+                    .All(pair => TypeCheck(pair.First, pair.Second));
+        }
         return left == right;
     }
 
@@ -48,6 +56,12 @@ abstract record TypeSymbol(string Name)
                 return $"function({function.ReturnType})";
             return $"function({string.Join(", ", function.ParameterSymbols)}, {function.ReturnType})";
         }
+        else if (this is ClassSymbol classSymbol)
+        {
+            if (classSymbol.TypeArguments.Count == 0)
+                return classSymbol.ClassName;
+            return $"{classSymbol.ClassName}<{string.Join(", ", classSymbol.TypeArguments)}>";
+        }
         return Name;
     }
 }
@@ -60,3 +74,4 @@ record EmptyArraySymbol() : TypeSymbol("array");
 record InvalidSymbol() : TypeSymbol("invalid");
 record TypeParameterSymbol(string Name) : TypeSymbol(Name);
 record FunctionSymbol(List<TypeSymbol> ParameterSymbols, TypeSymbol ReturnType) : TypeSymbol("function");
+record ClassSymbol(string ClassName, List<TypeSymbol> TypeArguments) : TypeSymbol(ClassName);

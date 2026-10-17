@@ -4,7 +4,7 @@
 
     True, False, Var, Infer, Typeof, Return,
     If, Else, ElseIf, Leave, While, Break,
-    Continue, Func,
+    Continue, Func, Class, Default,
 
     Add, Sub, Mul, Div, Mod,
     IsEqual, NotEqual, Less, Greater,

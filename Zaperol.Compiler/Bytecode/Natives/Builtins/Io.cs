@@ -28,6 +28,32 @@ class IoBuiltins : IBuiltin
             []
         ).ToValue();
 
+        globals["ioEPrint"] = new Native(
+            new([new TypeParameterSymbol("T")],
+            new TypeParameterSymbol("T")),
+            ["T"],
+            (typeArgs, args) =>
+            {
+                string value = args[0].ToString();
+                Console.Error.Write(value);
+                return args[0];
+            },
+            []
+        ).ToValue();
+
+        globals["ioEPrintln"] = new Native(
+            new([new TypeParameterSymbol("T")],
+            new TypeParameterSymbol("T")),
+            ["T"],
+            (typeArgs, args) =>
+            {
+                string value = args[0].ToString();
+                Console.Error.WriteLine(value);
+                return args[0];
+            },
+            []
+        ).ToValue();
+
         globals["ioInput"] = new Native(
             new(
                 [new StringSymbol()],
@@ -40,6 +66,20 @@ class IoBuiltins : IBuiltin
                 Console.Write(prompt);
                 string input = Console.ReadLine() ?? "";
                 return new(input);
+            },
+            []
+        ).ToValue();
+
+        globals["ioClear"] = new Native(
+            new(
+                [new StringSymbol()],
+                new IntSymbol()
+            ),
+            [],
+            (typeArgs, args) =>
+            {
+                Console.Clear();
+                return new(0);
             },
             []
         ).ToValue();

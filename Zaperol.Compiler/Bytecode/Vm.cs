@@ -345,6 +345,50 @@ static class Vm
                         break;
                     }
 
+                case OpCode.ArrayIndexGet:
+                    {
+                        int index = stack.Pop().AsInt32();
+                        var array = stack.Pop().Array;
+                        stack.Push(array[index]);
+                        break;
+                    }
+
+                case OpCode.StringIndexGet:
+                    {
+                        int index = stack.Pop().AsInt32();
+                        var str = stack.Pop().String;
+                        stack.Push(new(str[index].ToString()));
+                        break;
+                    }
+
+                case OpCode.ArrayIndexSet:
+                    {
+                        Value value = stack.Pop();
+                        int index = stack.Pop().AsInt32();
+                        var array = stack.Pop().Array;
+                        array[index] = value;
+                        stack.Push(value);
+                        break;
+                    }
+
+                case OpCode.ClassGetField:
+                    {
+                        Value @class = stack.Pop();
+                        int index = instruction.A;
+                        stack.Push(@class.Array[index]);
+                        break;
+                    }
+
+                case OpCode.ClassSetField:
+                    {
+                        Value value = stack.Pop();
+                        Value @class = stack.Pop();
+                        int index = instruction.A;
+                        @class.Array[index] = value;
+                        stack.Push(value);
+                        break;
+                    }
+
                 case OpCode.JumpIfFalse:
                     {
                         Value condition = stack.Peek();

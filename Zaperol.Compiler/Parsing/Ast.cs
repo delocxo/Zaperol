@@ -16,6 +16,12 @@ record AssignExpr(string Name, Expr Expr, Position Position) : Expr(Position);
 record UnBoundGenericNameExpr(string Name, List<ParserSymbol> Generics, Position Position) : Expr(Position);
 record BoundGenericNameExpr(string Name, List<TypeSymbol> Generics, Position Position) : Expr(Position);
 record CallExpr(Expr Target, List<Expr> Arguments, Position Position) : Expr(Position);
+record IndexExpr(Expr Target, Expr Index, Position Position) : Expr(Position);
+record IndexSetExpr(IndexExpr IndexExpr, Expr Value) : Expr(IndexExpr.Position);
+record MemberExpr(Expr Target, string MemberName, Position Position) : Expr(Position);
+record MemberSetExpr(MemberExpr MemberExpr, Expr Value) : Expr(MemberExpr.Position);
+record UnboundDefaultExpr(ParserSymbol Type, Position Position) : Expr(Position);
+record BoundDefaultExpr(TypeSymbol Type, Position Position) : Expr(Position);
 
 abstract class Stmt
 {
@@ -212,4 +218,40 @@ class BoundFunctionStmt : Stmt
     public List<BoundFunctionParamater> Paramaters { get; }
     public List<string> Generics { get; }
     public TypeSymbol ReturnType { get; }
+}
+
+class UnBoundClassStmt : Stmt
+{
+    public UnBoundClassStmt(
+        string name,
+        List<string> generics,
+        List<Stmt> body,
+        Position position) : base(position)
+    {
+        Name = name;
+        Generics = generics;
+        Body = body;
+    }
+
+    public string Name { get; }
+    public List<string> Generics { get; }
+    public List<Stmt> Body { get; }
+}
+
+class BoundClassStmt : Stmt
+{
+    public BoundClassStmt(
+        string name,
+        List<string> generics,
+        List<BoundVarStmt> fields,
+        Position position) : base(position)
+    {
+        Name = name;
+        Generics = generics;
+        Fields = fields;
+    }
+
+    public string Name { get; }
+    public List<string> Generics { get; }
+    public List<BoundVarStmt> Fields { get; }
 }

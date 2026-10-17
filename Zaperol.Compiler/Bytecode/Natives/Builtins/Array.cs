@@ -9,7 +9,7 @@ class ArrayBuiltins : IBuiltin
             (typeArgs, args) =>
             {
                 int capacity = args[0].AsInt32();
-                Value initial = DefaultValue(typeArgs[0]);
+                Value initial = Value.DefaultValue(typeArgs[0]);
                 Value[] array = new Value[capacity];
                 Array.Fill(array, initial);
                 return new(array);
@@ -101,27 +101,10 @@ class ArrayBuiltins : IBuiltin
             (typeArgs, args) =>
             {
                 Value[] array = args[0].Array;
-                Array.Fill(array, DefaultValue(typeArgs[0]));
+                Array.Fill(array, Value.DefaultValue(typeArgs[0]));
                 return new Value(0);
             },
             []
         ).ToValue();
-    }
-
-    Value DefaultValue(TypeSymbol typeSymbol)
-    {
-        return typeSymbol switch
-        {
-            IntSymbol => new Value(0L),
-            FloatSymbol => new Value(0.0),
-            BoolSymbol => new Value(false),
-
-            StringSymbol or ArraySymbol or FunctionSymbol =>
-                new Value((object?)null),
-
-            _ => throw new InvalidOperationException(
-                $"Cannot create a default value for {typeSymbol}"
-            )
-        };
     }
 }

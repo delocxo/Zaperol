@@ -23,7 +23,9 @@ class Lexer
             { "while", TokenType.While },
             { "break", TokenType.Break },
             { "continue", TokenType.Continue },
-            { "func", TokenType.Func }
+            { "func", TokenType.Func },
+            { "class", TokenType.Class },
+            { "default", TokenType.Default }
         };
 
     static Dictionary<string, TokenType> s_symbols = new Dictionary<string, TokenType>()

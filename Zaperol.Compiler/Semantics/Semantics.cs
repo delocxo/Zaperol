@@ -11,14 +11,24 @@ class Semantics
     };
 
     static Stack<HashSet<string>> _genericsStack = [];
+    HashSet<string> _names = [];
+    Dictionary<string, UnBoundClassStmt> _classes = new();
 
     int _loopDepth = 0;
     int _ifDepth = 0;
     int _functionDepth = 0;
 
+    bool AtTopLevel => _loopDepth == 0 && _ifDepth == 0 && _functionDepth == 0;
+
     public List<Stmt> Check(List<Stmt> stmts)
     {
         List<Stmt> newStmts = [];
+        foreach (Stmt stmt in stmts)
+            if (stmt is UnBoundClassStmt unBoundClassStmt)
+            {
+                AddName(unBoundClassStmt.Name, "class", unBoundClassStmt.Position);
+                _classes[unBoundClassStmt.Name] = unBoundClassStmt;
+            }
         foreach (Stmt stmt in stmts)
         {
             newStmts.Add(CheckStmt(stmt));
@@ -104,9 +114,16 @@ class Semantics
                 }
 
             case UnBoundFunctionStmt unBoundFunctionStmt:
-                if (_functionDepth > 0 || _ifDepth > 0 || _loopDepth > 0)
+                if (!AtTopLevel)
                     throw new Error($"Functions can only be at the top level", unBoundFunctionStmt.Position);
+
+                AddName(unBoundFunctionStmt.Name, "function", unBoundFunctionStmt.Position);
                 return CheckFunction(unBoundFunctionStmt);
+
+            case UnBoundClassStmt unBoundClassStmt:
+                if (!AtTopLevel)
+                    throw new Error($"Classes can only be at the top level", unBoundClassStmt.Position);
+                return CheckClass(unBoundClassStmt);
 
             default:
                 throw new UnreachableException();
@@ -120,7 +137,7 @@ class Semantics
             if (!generics.Add(generic))
                 throw new Error($"'{generic}' is a duplicate function generic", unBoundFunctionStmt.Position);
 
-        _genericsStack.Push(generics);
+        AddGenerics(generics, unBoundFunctionStmt.Position);
 
         var returnType = ParserSymbolToTypeSymbol(unBoundFunctionStmt.ReturnType);
 
@@ -147,6 +164,39 @@ class Semantics
             unBoundFunctionStmt.Generics,
             returnType,
             unBoundFunctionStmt.Position
+        );
+    }
+
+    BoundClassStmt CheckClass(UnBoundClassStmt unBoundClassStmt)
+    {
+        HashSet<string> generics = [];
+        foreach (string generic in unBoundClassStmt.Generics)
+            if (!generics.Add(generic))
+                throw new Error($"'{generic}' is a duplicate function generic", unBoundClassStmt.Position);
+
+        AddGenerics(generics, unBoundClassStmt.Position);
+
+        List<BoundVarStmt> fields = [];
+        HashSet<string> fieldsHashSet = [];
+
+        foreach (Stmt stmt in unBoundClassStmt.Body)
+        {
+            if (stmt is not UnboundVarStmt var)
+                throw new Error($"Only var statements are allowed inside classes", stmt.Position);
+
+            if (!fieldsHashSet.Add(var.Name))
+                throw new Error($"'{var.Name}' is a duplicate field", var.Position);
+
+            fields.Add((BoundVarStmt)CheckStmt(var));
+        }
+
+        _genericsStack.Pop();
+
+        return new BoundClassStmt(
+            unBoundClassStmt.Name,
+            unBoundClassStmt.Generics,
+            fields,
+            unBoundClassStmt.Position
         );
     }
 
@@ -205,6 +255,38 @@ class Semantics
                     callExpr.Position
                 );
 
+            case IndexExpr indexExpr:
+                return new IndexExpr(
+                    CheckExpr(indexExpr.Target),
+                    CheckExpr(indexExpr.Index),
+                    indexExpr.Position
+                );
+
+            case IndexSetExpr indexSetExpr:
+                return new IndexSetExpr(
+                    (IndexExpr)CheckExpr(indexSetExpr.IndexExpr),
+                    CheckExpr(indexSetExpr.Value)
+                );
+
+            case MemberExpr memberExpr:
+                return new MemberExpr(
+                    CheckExpr(memberExpr.Target),
+                    memberExpr.MemberName,
+                    memberExpr.Position
+                );
+
+            case MemberSetExpr memberSetExpr:
+                return new MemberSetExpr(
+                    (MemberExpr)CheckExpr(memberSetExpr.MemberExpr),
+                    CheckExpr(memberSetExpr.Value)
+                );
+
+            case UnboundDefaultExpr defaultExpr:
+                return new BoundDefaultExpr(
+                    ParserSymbolToTypeSymbol(defaultExpr.Type),
+                    defaultExpr.Position
+                );
+
             default:
                 return expr;
         }
@@ -221,9 +303,19 @@ class Semantics
                         if (parameterTypes.Contains(primitive.TypeName))
                             return new TypeParameterSymbol(primitive.TypeName);
                     }
-                    if (!TypeRegistery.TryGetValue(primitive.TypeName, out var callback))
-                        throw new Error($"'{primitive.TypeName}' is not a valid type", primitive.Position);
-                    return callback();
+
+                    if (TypeRegistery.TryGetValue(primitive.TypeName, out var callback))
+                        return callback();
+
+                    if (_classes.TryGetValue(primitive.TypeName, out var classStmt))
+                    {
+                        if (classStmt.Generics.Count != 0)
+                            throw new Error($"Class '{primitive.TypeName}' requires {classStmt.Generics.Count} type arguments", primitive.Position);
+
+                        return new ClassSymbol(primitive.TypeName, []);
+                    }
+
+                    throw new Error($"'{primitive.TypeName}' is not a valid type", primitive.Position);
                 }
 
             case ArrayParserSymbol array:
@@ -240,6 +332,27 @@ class Semantics
                     var returnType = parameters[^1];
                     parameters.RemoveAt(parameters.Count - 1);
                     return new FunctionSymbol(parameters, returnType);
+                }
+
+            case GenericParserSymbol generic:
+                {
+                    if (!_classes.TryGetValue(generic.TypeName, out var classStmt))
+                        throw new Error(
+                           $"'{generic.TypeName}' is not a valid class type",
+                           generic.Position
+                        );
+
+                    if (generic.Generics.Count != classStmt.Generics.Count)
+                        throw new Error(
+                            $"Class '{generic.TypeName}' expects {classStmt.Generics.Count} type argument(s), got {generic.Generics.Count}",
+                            generic.Position
+                        );
+
+                    var arguments = generic.Generics
+                        .Select(ParserSymbolToTypeSymbol)
+                        .ToList();
+
+                    return new ClassSymbol(generic.TypeName, arguments);
                 }
 
             default:
@@ -277,5 +390,23 @@ class Semantics
             _ifDepth = prevIfDepth;
             _loopDepth = prevLoopDepth;
         }
+    }
+
+    void AddName(string name, string type, Position position)
+    {
+        if (!_names.Add(name))
+            throw new Error($"'{name}' is already an existing {type}", position);
+    }
+
+    void AddGenerics(HashSet<string> generics, Position position)
+    {
+        HashSet<string> newGenerics = [.. generics];
+        foreach (var existingGenerics in _genericsStack)
+        {
+            foreach (string generic in existingGenerics)
+                if (!newGenerics.Add(generic))
+                    throw new Error($"'{generic}' is a duplicate generic parameter", position);
+        }
+        _genericsStack.Push(generics);
     }
 }

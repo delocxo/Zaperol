@@ -53,6 +53,14 @@ enum OpCode : byte
     Concat,
     FlipBool,
 
+    ArrayIndexGet,
+    ArrayIndexSet,
+
+    StringIndexGet,
+
+    ClassGetField,
+    ClassSetField,
+
     JumpIfFalse,
     JumpIfTrue,
     JumpIfFalsePop,

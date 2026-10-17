@@ -10,18 +10,21 @@ class Compiler
     Dictionary<string, BoundFunctionStmt> _functions;
     Dictionary<string, (FunctionSymbol Symbol, Chunk Chunk)> _compiledFunctions;
     Dictionary<string, TypeSymbol> _genericArguments;
+    Dictionary<string, BoundClassStmt> _classes;
 
     public Compiler(
         TypeSymbol returnType,
         Dictionary<string,
         BoundFunctionStmt> functions,
         Dictionary<string, TypeSymbol> genericArguments,
-        Dictionary<string, (FunctionSymbol Symbol, Chunk Chunk)> compiledFunctions)
+        Dictionary<string, (FunctionSymbol Symbol, Chunk Chunk)> compiledFunctions,
+        Dictionary<string, BoundClassStmt> classes)
     {
         ReturnType = returnType;
         _functions = functions;
         _genericArguments = genericArguments;
         _compiledFunctions = compiledFunctions;
+        _classes = classes;
     }
 
     public void CompileFile(string path, Position? position)
@@ -53,8 +56,10 @@ class Compiler
             foreach (Stmt stmt in newAst)
             {
                 if (stmt is BoundFunctionStmt function)
-                    if (!_functions.TryAdd(function.Name, function))
-                        throw new Error($"Function '{function.Name}' is already defined", function.Position);
+                    _functions[function.Name] = function;
+
+                else if (stmt is BoundClassStmt boundClassStmt)
+                    _classes[boundClassStmt.Name] = boundClassStmt;
             }
 
             CompileStmts(newAst);
@@ -282,7 +287,8 @@ class Compiler
             function.ReturnType,
             _functions,
             genericArguments,
-            _compiledFunctions
+            _compiledFunctions,
+            _classes
         );
 
         compiler.ReturnType = compiler.ResolveType(function.ReturnType);
@@ -310,6 +316,57 @@ class Compiler
         compiler.Chunk.ConvertListsToArrays();
 
         return _compiledFunctions[key];
+    }
+
+    (FunctionSymbol Symbol, Chunk Chunk) CompileClass(BoundClassStmt classStmt, List<TypeSymbol> typeArguments, Position position)
+    {
+        if (classStmt.Generics.Count != typeArguments.Count)
+            throw new Error(
+                $"Class '{classStmt.Name}' expects {classStmt.Generics.Count} generic(s), got {typeArguments.Count}",
+                position);
+
+        string key = $"{classStmt.Name}<{string.Join(
+            ", ",
+            typeArguments.Select(x => x
+        ))}>";
+
+        if (_compiledFunctions.TryGetValue(key, out var compiled))
+            return compiled;
+
+        Dictionary<string, TypeSymbol> genericArguments = classStmt.Generics
+            .Zip(typeArguments)
+            .ToDictionary(key => key.First, value => value.Second);
+
+        var classSymbol = new ClassSymbol(classStmt.Name, typeArguments);
+
+        Compiler compiler = new Compiler(
+            classSymbol,
+            _functions,
+            genericArguments,
+            _compiledFunctions,
+            _classes
+        );
+
+        var functionSymbol = new FunctionSymbol([], classSymbol);
+
+        _compiledFunctions[key] = (functionSymbol, compiler.Chunk);
+
+        foreach (var field in classStmt.Fields)
+            compiler.CompileStmt(field);
+
+        foreach (var field in classStmt.Fields)
+        {
+            Local local = compiler.LocalResolver.Resolve(field.Name, field.Position);
+            compiler.Chunk.AddInstruction(local.Slot, OpCode.LoadLocal, field.Position);
+        }
+
+        compiler.Chunk.AddInstruction(classStmt.Fields.Count, OpCode.MakeArray, position);
+
+        compiler.Chunk.AddInstruction(OpCode.Ret, position);
+
+        compiler.Chunk.ConvertListsToArrays();
+
+        return (functionSymbol, compiler.Chunk);
     }
 
     TypeSymbol CompileExpr(Expr expr)
@@ -345,6 +402,13 @@ class Compiler
                     if (_functions.TryGetValue(nameExpr.Name, out var function))
                     {
                         var compiled = CompileFunction(function, [], nameExpr.Position);
+                        int constant = Chunk.AddConst(new Value(compiled.Chunk));
+                        Chunk.AddInstruction(constant, OpCode.LoadConst, nameExpr.Position);
+                        return compiled.Symbol;
+                    }
+                    else if (_classes.TryGetValue(nameExpr.Name, out var classStmt))
+                    {
+                        var compiled = CompileClass(classStmt, [], nameExpr.Position);
                         int constant = Chunk.AddConst(new Value(compiled.Chunk));
                         Chunk.AddInstruction(constant, OpCode.LoadConst, nameExpr.Position);
                         return compiled.Symbol;
@@ -416,6 +480,13 @@ class Compiler
                         Chunk.AddInstruction(constant, OpCode.LoadConst, boundNameExpr.Position);
                         return compiled.Symbol;
                     }
+                    else if (_classes.TryGetValue(boundNameExpr.Name, out var classStmt))
+                    {
+                        var compiled = CompileClass(classStmt, typeArguments, boundNameExpr.Position);
+                        int constant = Chunk.AddConst(new Value(compiled.Chunk));
+                        Chunk.AddInstruction(constant, OpCode.LoadConst, boundNameExpr.Position);
+                        return compiled.Symbol;
+                    }
                     else if (Globals.Values.TryGetValue(boundNameExpr.Name, out var value) && value.Object is Native native)
                     {
                         var bound = BindNative(native, typeArguments.ToArray(), boundNameExpr.Position);
@@ -449,6 +520,114 @@ class Compiler
                     Chunk.AddInstruction(arguments.Count, OpCode.Call, callExpr.Position);
 
                     return functionSymbol.ReturnType;
+                }
+
+            case IndexExpr indexExpr:
+                {
+                    var target = CompileExpr(indexExpr.Target);
+                    var index = CompileExpr(indexExpr.Index);
+
+                    if (target is ArraySymbol arraySymbol)
+                    {
+                        index.Expect(new IntSymbol(), indexExpr.Position);
+                        Chunk.AddInstruction(OpCode.ArrayIndexGet, indexExpr.Position);
+                        return arraySymbol.ElementType;
+                    }
+                    else if (target is StringSymbol stringSymbol)
+                    {
+                        index.Expect(new IntSymbol(), indexExpr.Position);
+                        Chunk.AddInstruction(OpCode.StringIndexGet, indexExpr.Position);
+                        return stringSymbol;
+                    }
+
+                    throw new Error($"Type {target} cannot be inded read", indexExpr.Position);
+                }
+
+            case IndexSetExpr indexSetExpr:
+                {
+                    var indexExpr = indexSetExpr.IndexExpr;
+                    var target = CompileExpr(indexExpr.Target);
+                    var index = CompileExpr(indexExpr.Index);
+                    var value = CompileExpr(indexSetExpr.Value);
+
+                    if (target is ArraySymbol arraySymbol)
+                    {
+                        index.Expect(new IntSymbol(), indexExpr.Position);
+                        value.Expect(arraySymbol.ElementType, indexSetExpr.Position);
+                        Chunk.AddInstruction(OpCode.ArrayIndexSet, indexExpr.Position);
+                        return arraySymbol.ElementType;
+                    }
+
+                    throw new Error($"Type {target} cannot be index set", indexExpr.Position);
+                }
+
+            case MemberExpr memberExpr:
+                {
+                    var target = CompileExpr(memberExpr.Target);
+
+                    if (target is ClassSymbol classSymbol)
+                    {
+                        var @class = _classes[classSymbol.Name];
+                        int index = @class.Fields.FindIndex(x => x.Name == memberExpr.MemberName);
+
+                        if (index == -1)
+                            throw new Error(
+                                $"Class '{classSymbol.ClassName}' does not contain field '{memberExpr.MemberName}'",
+                                memberExpr.Position
+                            );
+
+                        var field = @class.Fields[index];
+                        Chunk.AddInstruction(index, OpCode.ClassGetField, memberExpr.Position);
+
+                        var bindings = @class.Generics
+                            .Zip(classSymbol.TypeArguments)
+                            .ToDictionary(pair => pair.First, pair => pair.Second);
+
+                        return ResolveType(field.TypeSymbol, bindings);
+                    }
+
+                    throw new Error($"Type {target} cannot be member read", memberExpr.Position);
+                }
+
+            case MemberSetExpr memberSetExpr:
+                {
+                    MemberExpr memberExpr = memberSetExpr.MemberExpr;
+                    var target = CompileExpr(memberExpr.Target);
+                    var value = CompileExpr(memberSetExpr.Value);
+
+                    if (target is ClassSymbol classSymbol)
+                    {
+                        var @class = _classes[classSymbol.Name];
+                        int index = @class.Fields.FindIndex(x => x.Name == memberExpr.MemberName);
+
+                        if (index == -1)
+                            throw new Error(
+                                $"Class '{classSymbol.ClassName}' does not contain field '{memberExpr.MemberName}'",
+                                memberExpr.Position
+                            );
+
+                        var field = @class.Fields[index];
+
+                        var bindings = @class.Generics
+                            .Zip(classSymbol.TypeArguments)
+                            .ToDictionary(pair => pair.First, pair => pair.Second);
+
+                        var symbol = ResolveType(field.TypeSymbol, bindings);
+                        value.Expect(symbol, memberSetExpr.Position);
+
+                        Chunk.AddInstruction(index, OpCode.ClassSetField, memberExpr.Position);
+
+                        return symbol;
+                    }
+
+                    throw new Error($"Type {target} cannot be member read", memberExpr.Position);
+                }
+
+            case BoundDefaultExpr boundDefaultExpr:
+                {
+                    var type = ResolveType(boundDefaultExpr.Type);
+                    Chunk.AddLoadConst(Value.DefaultValue(type), boundDefaultExpr.Position);
+                    return type;
                 }
 
             default:
@@ -736,7 +915,7 @@ class Compiler
 
     TypeSymbol CompileAnd(BinaryExpr binaryExpr)
     {
-        var left = CompileExpr(binaryExpr.Right)
+        var left = CompileExpr(binaryExpr.Left)
             .Expect(TypeSymbol.BoolSymbol, binaryExpr.Position);
 
         int end = Chunk.AddInstruction(OpCode.JumpIfFalse, binaryExpr.Position);
@@ -753,7 +932,7 @@ class Compiler
 
     TypeSymbol CompileOr(BinaryExpr binaryExpr)
     {
-        var left = CompileExpr(binaryExpr.Right)
+        var left = CompileExpr(binaryExpr.Left)
             .Expect(TypeSymbol.BoolSymbol, binaryExpr.Position);
 
         int end = Chunk.AddInstruction(OpCode.JumpIfTrue, binaryExpr.Position);
@@ -811,8 +990,18 @@ class Compiler
 
             FunctionSymbol function =>
                 new FunctionSymbol(
-                    function.ParameterSymbols.Select(p => ResolveType(p, bindings)).ToList(),
+                    function.ParameterSymbols
+                        .Select(p => ResolveType(p, bindings))
+                        .ToList(),
                     ResolveType(function.ReturnType, bindings)
+                ),
+
+            ClassSymbol classSymbol =>
+                new ClassSymbol(
+                    classSymbol.ClassName,
+                    classSymbol.TypeArguments
+                        .Select(t => ResolveType(t, bindings))
+                        .ToList()
                 ),
 
             _ => type

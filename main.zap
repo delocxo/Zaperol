@@ -1,78 +1,84 @@
-var [int] source = [10, 20, 30, 40];
-var [int] destination = [1, 2, 3, 4, 5];
+class Example
+{
+    var int number = 42;
+}
 
-arrayCopy::<int>(source, 1, destination, 2, 2);
-ioPrintln::<[int]>(destination); // [1, 2, 20, 30, 5]
+class Box<T>
+{
+    var T value = default(T);
+}
 
-if (arrayGet::<int>(destination, 0) != 1)
+func T makeDefault<T>()
+{
+    return default(T);
+}
+
+var int integer = default(int);
+var float decimal = default(float);
+var bool flag = default(bool);
+var string text = default(string);
+var [int] array = default([int]);
+var func(int, int) callback = default(func(int, int));
+var Example instance = default(Example);
+
+ioPrintln::<int>(integer);                 // 0
+ioPrintln::<float>(decimal);               // 0
+ioPrintln::<bool>(flag);                   // false
+ioPrintln::<string>(text);                 // <null>
+ioPrintln::<[int]>(array);                 // <null>
+ioPrintln::<func(int, int)>(callback);     // <null>
+ioPrintln::<Example>(instance);            // <null>
+
+if (integer != 0)
 {
     return -1;
 }
 
-if (arrayGet::<int>(destination, 2) != 20)
+if (decimal != 0.0)
 {
     return -2;
 }
 
-if (arrayGet::<int>(destination, 3) != 30)
+if (flag != false)
 {
     return -3;
 }
 
-if (arrayGet::<int>(destination, 4) != 5)
+// Generic substitution in default expressions.
+if (makeDefault::<int>() != 0)
 {
     return -4;
 }
 
-// Overlapping copy toward the right.
-var [int] overlap = [1, 2, 3, 4, 5];
-arrayCopy::<int>(overlap, 0, overlap, 1, 4);
-ioPrintln::<[int]>(overlap); // [1, 1, 2, 3, 4]
-
-if (arrayGet::<int>(overlap, 4) != 4)
+if (makeDefault::<bool>() != false)
 {
     return -5;
 }
 
-// Overlapping copy toward the left.
-arrayCopy::<int>(overlap, 1, overlap, 0, 4);
-ioPrintln::<[int]>(overlap); // [1, 2, 3, 4, 4]
+// Default expressions inside generic field initializers.
+var Box<int> integers = Box::<int>();
+var Box<bool> flags = Box::<bool>();
+var Box<Example> objects = Box::<Example>();
 
-if (arrayGet::<int>(overlap, 2) != 3)
+if (integers.value != 0)
 {
     return -6;
 }
 
-arrayClear::<int>(destination);
-ioPrintln::<[int]>(destination); // [0, 0, 0, 0, 0]
-
-var int i = 0;
-while (i < arrayLength::<int>(destination))
+if (flags.value != false)
 {
-    if (arrayGet::<int>(destination, i) != 0)
-    {
-        return -7;
-    }
-
-    i = i + 1;
+    return -7;
 }
 
-var [bool] flags = [true, true];
-arrayClear::<bool>(flags);
-ioPrintln::<[bool]>(flags); // [false, false]
+ioPrintln::<Example>(objects.value); // <null>
 
-if (arrayGet::<bool>(flags, 0) != false)
+// A null field can later receive a real instance.
+objects.value = Example();
+
+if (objects.value.number != 42)
 {
     return -8;
 }
 
-// Cleared elements must remain usable.
-arraySet::<int>(destination, 0, 99);
-
-if (arrayGet::<int>(destination, 0) != 99)
-{
-    return -9;
-}
-
-ioPrintln::<string>("Copy and clear checks passed.");
+ioPrintln::<string>("Default checks passed.");
 return 0;
