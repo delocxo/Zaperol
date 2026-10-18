@@ -135,6 +135,7 @@ readonly struct Value
             StringSymbol or
             ArraySymbol or
             FunctionSymbol or
+            EnumSymbol or
             ClassSymbol =>
                 new Value((object?)null),
 

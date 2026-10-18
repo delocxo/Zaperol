@@ -20,6 +20,8 @@ abstract record TypeSymbol(string Name)
                     .Zip(cb.TypeArguments)
                     .All(pair => TypeCheck(pair.First, pair.Second));
         }
+        else if (left is EnumSymbol && right is EnumSymbol)
+            return ReferenceEquals(left, right);
         return left == right;
     }
 
@@ -75,3 +77,5 @@ record InvalidSymbol() : TypeSymbol("invalid");
 record TypeParameterSymbol(string Name) : TypeSymbol(Name);
 record FunctionSymbol(List<TypeSymbol> ParameterSymbols, TypeSymbol ReturnType) : TypeSymbol("function");
 record ClassSymbol(string ClassName, List<TypeSymbol> TypeArguments) : TypeSymbol(ClassName);
+record EnumSymbol(string Name, List<EnumValue> Values) : TypeSymbol(Name);
+record EnumValue(string Name, long Value);

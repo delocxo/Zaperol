@@ -25,7 +25,8 @@ class Lexer
             { "continue", TokenType.Continue },
             { "func", TokenType.Func },
             { "class", TokenType.Class },
-            { "default", TokenType.Default }
+            { "default", TokenType.Default },
+            { "enum", TokenType.Enum }
         };
 
     static Dictionary<string, TokenType> s_symbols = new Dictionary<string, TokenType>()

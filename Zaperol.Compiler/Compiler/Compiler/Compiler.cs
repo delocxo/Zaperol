@@ -1,4 +1,4 @@
-class Compiler
+partial class Compiler
 {
     public Chunk Chunk { get; } = new();
     public LocalResolver LocalResolver = new();
@@ -11,6 +11,7 @@ class Compiler
     Dictionary<string, (FunctionSymbol Symbol, Chunk Chunk)> _compiledFunctions;
     Dictionary<string, TypeSymbol> _genericArguments;
     Dictionary<string, BoundClassStmt> _classes;
+    Dictionary<string, EnumSymbol> _enums;
 
     public Compiler(
         TypeSymbol returnType,
@@ -18,13 +19,15 @@ class Compiler
         BoundFunctionStmt> functions,
         Dictionary<string, TypeSymbol> genericArguments,
         Dictionary<string, (FunctionSymbol Symbol, Chunk Chunk)> compiledFunctions,
-        Dictionary<string, BoundClassStmt> classes)
+        Dictionary<string, BoundClassStmt> classes,
+        Dictionary<string, EnumSymbol> enums)
     {
         ReturnType = returnType;
         _functions = functions;
         _genericArguments = genericArguments;
         _compiledFunctions = compiledFunctions;
         _classes = classes;
+        _enums = enums;
     }
 
     public void CompileFile(string path, Position? position)
@@ -150,6 +153,10 @@ class Compiler
 
             case WhileStmt whileStmt:
                 CompileWhile(whileStmt);
+                break;
+
+            case BoundEnumStmt boundEnumStmt:
+                _enums.Add(boundEnumStmt.EnumSymbol.Name, boundEnumStmt.EnumSymbol);
                 break;
         }
     }
@@ -301,7 +308,8 @@ class Compiler
             _functions,
             genericArguments,
             _compiledFunctions,
-            _classes
+            _classes,
+            _enums
         );
 
         compiler.ReturnType = compiler.ResolveType(function.ReturnType);
@@ -374,7 +382,8 @@ class Compiler
             _functions,
             genericArguments,
             _compiledFunctions,
-            _classes
+            _classes,
+            _enums
         );
 
         var functionSymbol = new FunctionSymbol([], classSymbol);
@@ -665,19 +674,37 @@ class Compiler
 
             case MemberExpr memberExpr:
                 {
+                    if (memberExpr.Target is NameExpr nameExpr)
+                    {
+                        if (_enums.TryGetValue(nameExpr.Name, out var enumSymbol))
+                        {
+                            if (memberExpr.Member is not NameExpr nameExpr1)
+                                throw new Error("Expected a valid member name", memberExpr.Position);
+
+                            var value = enumSymbol.Values.Find(e => e.Name == nameExpr1.Name);
+
+                            if (value == null)
+                                throw new Error($"Enum '{enumSymbol.Name}' does not contain value '{nameExpr1.Name}'", memberExpr.Position);
+
+                            Chunk.AddLoadConst(new(value.Value), memberExpr.Position);
+
+                            return enumSymbol;
+                        }
+                    }
+
                     var target = CompileExpr(memberExpr.Target);
 
                     if (target is ClassSymbol classSymbol)
                     {
-                        if (memberExpr.Member is not NameExpr nameExpr)
+                        if (memberExpr.Member is not NameExpr nameExpr1)
                             throw new Error("Expected a valid member name", memberExpr.Position);
 
                         var @class = _classes[classSymbol.Name];
-                        int index = @class.Fields.FindIndex(x => x.Name == nameExpr.Name);
+                        int index = @class.Fields.FindIndex(x => x.Name == nameExpr1.Name);
 
                         if (index == -1)
                             throw new Error(
-                                $"Class '{classSymbol.ClassName}' does not contain field '{nameExpr.Name}'",
+                                $"Class '{classSymbol.ClassName}' does not contain field '{nameExpr1.Name}'",
                                 memberExpr.Position
                             );
 
@@ -977,6 +1004,7 @@ class Compiler
                             (StringSymbol, StringSymbol) => op = OpCode.EqualsStrings,
                             (BoolSymbol, BoolSymbol) => op = OpCode.EqualsBools,
                             (ArraySymbol, ArraySymbol) => OpCode.EqualsArrays,
+                            (EnumSymbol, EnumSymbol) => OpCode.EqualsIntInt,
                             _ => throw BinaryError(left, right, "==", position)
                         };
                     }
@@ -1001,6 +1029,7 @@ class Compiler
                             (StringSymbol, StringSymbol) => op = OpCode.NotEqualStrings,
                             (BoolSymbol, BoolSymbol) => op = OpCode.NotEqualBools,
                             (ArraySymbol, ArraySymbol) => OpCode.NotEqualArrays,
+                            (EnumSymbol, EnumSymbol) => OpCode.NotEqualIntInt,
                             _ => throw BinaryError(left, right, "!=", position)
                         };
                     }

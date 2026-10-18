@@ -259,3 +259,25 @@ class BoundClassStmt : Stmt
     public List<BoundVarStmt> Fields { get; }
     public List<BoundFunctionStmt> Methods { get; }
 }
+
+class UnboundEnumStmt : Stmt
+{
+    public UnboundEnumStmt(string name, List<string> values, Position position) : base(position)
+    {
+        Name = name;
+        Values = values;
+    }
+
+    public string Name { get; }
+    public List<string> Values { get; }
+}
+
+class BoundEnumStmt : Stmt
+{
+    public BoundEnumStmt(EnumSymbol enumSymbol, Position position) : base(position)
+    {
+        EnumSymbol = enumSymbol;
+    }
+
+    public EnumSymbol EnumSymbol { get; }
+}

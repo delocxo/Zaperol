@@ -35,6 +35,11 @@ class CastBuiltins : IBuiltin
 
                             case StringSymbol stringSymbol:
                                 return new(long.Parse(source.String, CultureInfo.InvariantCulture));
+
+                            case EnumSymbol enumSymbol:
+                                if (!enumSymbol.Values.Any(value => value.Value == source.Int))
+                                    throw new InvalidOperationException($"{source.Int} is not a defined value of {enumSymbol}");
+                                return source;
                         }
                         break;
 
@@ -69,6 +74,21 @@ class CastBuiltins : IBuiltin
 
                             case StringSymbol:
                                 return new(bool.Parse(source.String));
+                        }
+                        break;
+
+                    case EnumSymbol enumSymbol:
+                        switch (sourceSymbol)
+                        {
+                            case IntSymbol:
+                                if (!enumSymbol.Values.Any(member => member.Value == source.Int))
+                                {
+                                    throw new InvalidCastException(
+                                        $"{source.Int} is not a defined value of {enumSymbol.Name}"
+                                    );
+                                }
+
+                                return source;
                         }
                         break;
                 }
@@ -113,6 +133,9 @@ class CastBuiltins : IBuiltin
                                 return Result.MakeResult(new Value(result), true);
                             }
                             break;
+
+                        case EnumSymbol enumSymbol:
+                            return Result.MakeResult(source, true);
                     }
                     break;
 
@@ -153,6 +176,18 @@ class CastBuiltins : IBuiltin
                             if (bool.TryParse(source.String, out bool result))
                             {
                                 return Result.MakeResult(new Value(result), true);
+                            }
+                            break;
+                    }
+                    break;
+
+                case EnumSymbol enumSymbol:
+                    switch (sourceSymbol)
+                    {
+                        case IntSymbol:
+                            if (enumSymbol.Values.Any(member => member.Value == source.Int))
+                            {
+                                return Result.MakeResult(source, true);
                             }
                             break;
                     }

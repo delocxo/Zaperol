@@ -10,7 +10,7 @@ class Semantics
         ["bool"] = () => new BoolSymbol()
     };
     public static Dictionary<string, UnBoundClassStmt> Classes = [];
-
+    public static Dictionary<string, BoundEnumStmt> Enums = [];
     static HashSet<string> _names = [];
     Stack<HashSet<string>> _genericsStack = [];
 
@@ -28,6 +28,12 @@ class Semantics
             {
                 AddName(unBoundClassStmt.Name, "class", unBoundClassStmt.Position);
                 Classes[unBoundClassStmt.Name] = unBoundClassStmt;
+            }
+            else if (stmt is UnboundEnumStmt unBoundEnumStmt)
+            {
+                AddName(unBoundEnumStmt.Name, "enum", unBoundEnumStmt.Position);
+                var bound = CheckEnum(unBoundEnumStmt);
+                Enums[unBoundEnumStmt.Name] = bound;
             }
         foreach (Stmt stmt in stmts)
         {
@@ -125,6 +131,11 @@ class Semantics
                     throw new Error($"Classes can only be at the top level", unBoundClassStmt.Position);
                 return CheckClass(unBoundClassStmt);
 
+            case UnboundEnumStmt unBoundEnumStmt:
+                if (!AtTopLevel)
+                    throw new Error($"Enums can only be at the top level", unBoundEnumStmt.Position);
+                return Enums[unBoundEnumStmt.Name];
+
             default:
                 throw new UnreachableException();
         }
@@ -211,6 +222,22 @@ class Semantics
             methods,
             unBoundClassStmt.Position
         );
+    }
+
+    BoundEnumStmt CheckEnum(UnboundEnumStmt unboundEnumStmt)
+    {
+        HashSet<string> values = [];
+        foreach (var value in unboundEnumStmt.Values)
+            if (!values.Add(value))
+                throw new Error($"'{value}' is a duplicate enum value", unboundEnumStmt.Position);
+
+        List<EnumValue> enumValues = [];
+        EnumSymbol enumSymbol = new(unboundEnumStmt.Name, enumValues);
+
+        for (int i = 0; i < unboundEnumStmt.Values.Count; i++)
+            enumValues.Add(new(unboundEnumStmt.Values[i], i));
+
+        return new(enumSymbol, unboundEnumStmt.Position);
     }
 
     Expr CheckExpr(Expr expr)
@@ -314,16 +341,19 @@ class Semantics
                     if (TryGetTypeParameter(primitive.TypeName, out var typeParameter))
                         return typeParameter!;
 
-                    if (TypeRegistery.TryGetValue(primitive.TypeName, out var callback))
+                    else if (TypeRegistery.TryGetValue(primitive.TypeName, out var callback))
                         return callback();
 
-                    if (Classes.TryGetValue(primitive.TypeName, out var classStmt))
+                    else if (Classes.TryGetValue(primitive.TypeName, out var classStmt))
                     {
                         if (classStmt.Generics.Count != 0)
                             throw new Error($"Class '{primitive.TypeName}' requires {classStmt.Generics.Count} type arguments", primitive.Position);
 
                         return new ClassSymbol(primitive.TypeName, []);
                     }
+
+                    else if (Enums.TryGetValue(primitive.TypeName, out var enumStmt))
+                        return enumStmt.EnumSymbol;
 
                     throw new Error($"'{primitive.TypeName}' is not a valid type", primitive.Position);
                 }

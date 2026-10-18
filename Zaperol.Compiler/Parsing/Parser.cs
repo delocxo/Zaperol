@@ -55,6 +55,9 @@ class Parser
         else if (Check(TokenType.Class))
             return ParseClass();
 
+        else if (Check(TokenType.Enum))
+            return ParseEnum();
+
         return ParseExprStmt();
     }
 
@@ -204,6 +207,17 @@ class Parser
         var body = ParseBody();
 
         return new(name, generics, body, position);
+    }
+
+    UnboundEnumStmt ParseEnum()
+    {
+        Position position = GetPosNext();
+
+        string name = ParseName("Expected enum name");
+
+        List<string> values = ParseNames(TokenType.LeftBrace, TokenType.RightBrace);
+
+        return new(name, values, position);
     }
 
     Error ThrowUnexpected()
